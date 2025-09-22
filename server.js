@@ -15,9 +15,6 @@ if (!fs.existsSync(screenshotsDir)) {
   fs.mkdirSync(screenshotsDir, { recursive: true });
 }
 
-const app = express();
-const PORT = process.env.PORT || 3001;
-
 // Configurar logger
 const logger = winston.createLogger({
   level: 'info',
