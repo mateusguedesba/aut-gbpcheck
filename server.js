@@ -67,7 +67,7 @@ class PlaywrightAutomation {
         throw new Error('manifest.json não encontrado na extensão');
       }
       
-      // Argumentos do Chrome com extensão e dados persistentes
+      // Argumentos do Chrome com extensão (sem --user-data-dir)
       const browserArgs = [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -82,7 +82,6 @@ class PlaywrightAutomation {
         '--no-first-run',
         '--no-default-browser-check',
         '--disable-default-apps',
-        `--user-data-dir=${this.userDataDir}`,
         '--enable-logging',
         '--log-level=0'
       ];
@@ -97,29 +96,31 @@ class PlaywrightAutomation {
       // Importar Playwright
       const { chromium } = require('playwright');
       
-      // Iniciar Chrome
-      logger.info('Iniciando browser Chromium...');
-      this.browser = await chromium.launch({
+      // Usar launchPersistentContext para dados persistentes
+      logger.info('Iniciando browser Chromium com contexto persistente...');
+      this.context = await chromium.launchPersistentContext(this.userDataDir, {
         headless: headless,
         args: browserArgs,
         slowMo: 100,
-        timeout: 30000  // 30 segundos de timeout
-      });
-      
-      logger.info('Browser iniciado com sucesso');
-      
-      // Criar contexto
-      logger.info('Criando contexto do browser...');
-      this.context = await this.browser.newContext({
+        timeout: 30000,
         viewport: { width: 1920, height: 1080 },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       });
       
-      logger.info('Contexto criado com sucesso');
+      logger.info('Contexto persistente criado com sucesso');
       
-      // Criar página
-      logger.info('Criando página...');
-      this.page = await this.context.newPage();
+      // O browser é acessível através do contexto
+      this.browser = this.context.browser();
+      
+      // Criar ou usar página existente
+      const pages = this.context.pages();
+      if (pages.length > 0) {
+        this.page = pages[0];
+        logger.info('Usando página existente');
+      } else {
+        this.page = await this.context.newPage();
+        logger.info('Nova página criada');
+      }
       
       logger.info("Browser configurado com sucesso");
       return true;
@@ -130,9 +131,8 @@ class PlaywrightAutomation {
       
       // Tentar limpeza em caso de erro
       try {
-        if (this.page) await this.page.close();
+        if (this.page && !this.page.isClosed()) await this.page.close();
         if (this.context) await this.context.close();
-        if (this.browser) await this.browser.close();
       } catch (cleanupError) {
         logger.error(`Erro na limpeza: ${cleanupError.message}`);
       }
@@ -496,7 +496,7 @@ class PlaywrightAutomation {
       if (finalPage && !finalPage.isClosed()) {
         return {
           url: finalPage.url(),
-          title: finalPage.evaluate(() => document.title),
+          title: '', // Remover await aqui pois não é função async
           timestamp: new Date().toISOString()
         };
       }
