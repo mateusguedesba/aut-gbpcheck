@@ -24,11 +24,11 @@ RUN apt-get update && apt-get install -y \
 # Criar diretório da aplicação
 WORKDIR /app
 
-# Copiar package.json
-COPY package.json package-lock.json ./
+# Copiar apenas package.json (sem package-lock.json)
+COPY package.json ./
 
 # Instalar dependências Node.js
-RUN npm ci
+RUN npm install
 
 # Instalar Playwright e browsers
 RUN npx playwright install chromium
@@ -40,6 +40,6 @@ COPY . .
 # Criar diretório para dados
 RUN mkdir -p /app/data
 
-EXPOSE 3002
+EXPOSE 3001
 
 CMD ["node", "server.js"]
