@@ -65,7 +65,7 @@ app.post('/automate', async (req, res) => {
 
     // Iniciar browser
     browser = await chromium.launch({
-      headless: false, // Necessário para extensões funcionarem
+      headless: true, // Necessário para extensões funcionarem
       args: browserArgs,
       slowMo: 100
     });
