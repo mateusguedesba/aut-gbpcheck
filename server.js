@@ -9,11 +9,15 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Criar diretório para screenshots
+// Criar diretórios necessários
 const screenshotsDir = path.join(__dirname, 'data', 'screenshots');
-if (!fs.existsSync(screenshotsDir)) {
-  fs.mkdirSync(screenshotsDir, { recursive: true });
-}
+const userDataDir = path.join(__dirname, 'data', 'browser-data');
+
+[screenshotsDir, userDataDir].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
 
 // Configurar logger
 const logger = winston.createLogger({
@@ -24,7 +28,7 @@ const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.Console(),
-    new winston.transports.File({ filename: '/app/data/app.log' })
+    new winston.transports.File({ filename: path.join(__dirname, 'data', 'app.log') })
   ]
 });
 
@@ -36,321 +40,387 @@ app.use(express.json({ limit: '50mb' }));
 // Servir arquivos estáticos (screenshots)
 app.use('/screenshots', express.static(screenshotsDir));
 
-// Rota de health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
-
-// Endpoint para listar screenshots
-app.get('/screenshots', (req, res) => {
-  try {
-    const files = fs.readdirSync(screenshotsDir);
-    const screenshots = files
-      .filter(file => file.endsWith('.png'))
-      .map(file => {
-        const filePath = path.join(screenshotsDir, file);
-        const stats = fs.statSync(filePath);
-        return {
-          filename: file,
-          url: `/screenshots/${file}`,
-          size: stats.size,
-          created: stats.birthtime.toISOString()
-        };
-      })
-      .sort((a, b) => new Date(b.created) - new Date(a.created)); // Mais recentes primeiro
-
-    res.json({
-      success: true,
-      screenshots: screenshots,
-      count: screenshots.length
-    });
-  } catch (error) {
-    logger.error(`Erro ao listar screenshots: ${error.message}`);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+class PlaywrightAutomation {
+  constructor() {
+    this.browser = null;
+    this.context = null;
+    this.page = null;
+    this.userDataDir = userDataDir;
   }
-});
-
-// Endpoint para limpar screenshots antigos
-app.delete('/screenshots/cleanup', (req, res) => {
-  try {
-    const { daysOld = 7 } = req.query;
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - parseInt(daysOld));
-
-    const files = fs.readdirSync(screenshotsDir);
-    let deletedCount = 0;
-
-    files.forEach(file => {
-      const filePath = path.join(screenshotsDir, file);
-      const stats = fs.statSync(filePath);
-      
-      if (stats.birthtime < cutoffDate) {
-        fs.unlinkSync(filePath);
-        deletedCount++;
-        logger.info(`Screenshot removido: ${file}`);
-      }
-    });
-
-    res.json({
-      success: true,
-      message: `${deletedCount} screenshots removidos`,
-      deletedCount: deletedCount
-    });
-  } catch (error) {
-    logger.error(`Erro ao limpar screenshots: ${error.message}`);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-app.post('/automate', async (req, res) => {
-  const { url, waitTime = 300000, extensionPath = '/chrome-extension' } = req.body;
   
-  if (!url) {
-    return res.status(400).json({ error: 'URL é obrigatória' });
+  async setupBrowser(extensionPath = "/chrome-extension", headless = true, enableVnc = false) {
+    try {
+      // Argumentos do Chrome com extensão e dados persistentes
+      const browserArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        `--disable-extensions-except=${extensionPath}`,
+        `--load-extension=${extensionPath}`,
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-default-apps',
+        `--user-data-dir=${this.userDataDir}`,
+        '--enable-logging',
+        '--log-level=0'
+      ];
+      
+      // Se VNC estiver habilitado, configurar display
+      if (enableVnc && !headless) {
+        browserArgs.push('--display=:99', '--disable-gpu');
+      }
+      
+      // Iniciar Chrome
+      this.browser = await chromium.launch({
+        headless: headless,
+        args: browserArgs,
+        slowMo: 100
+      });
+      
+      // Criar contexto
+      this.context = await this.browser.newContext({
+        viewport: { width: 1920, height: 1080 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      });
+      
+      // Criar página
+      this.page = await this.context.newPage();
+      logger.info("Browser configurado com sucesso");
+      return true;
+      
+    } catch (error) {
+      logger.error(`Erro ao configurar browser: ${error.message}`);
+      return false;
+    }
   }
-
-  let browser = null;
-  let context = null;
-  let page = null;
-
-  try {
-    logger.info(`Iniciando automação para URL: ${url}`);
-
-    // Configurar argumentos do Chrome com extensão
-    const browserArgs = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--disable-features=TranslateUI',
-      '--disable-ipc-flooding-protection',
-      `--disable-extensions-except=${extensionPath}`,
-      `--load-extension=${extensionPath}`,
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-default-apps'
-    ];
-
-    // Iniciar browser
-    browser = await chromium.launch({
-      headless: true, // ← MUDANÇA: true em vez de false
-      args: browserArgs,
-      slowMo: 100
-    });
-
-    // Criar contexto
-    context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    });
-
-    // Criar página
-    page = await context.newPage();
-
-    // Navegar para a URL
-    logger.info(`Navegando para: ${url}`);
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
-
-    // Aguardar a página carregar completamente
-    await page.waitForTimeout(5000);
-
-    // Aguardar o botão da extensão aparecer
-    logger.info('Aguardando botão da extensão...');
-    
-    // Seletores específicos para o botão "Pré Análise"
-    const possibleSelectors = [
-      '.start-main-check-btn',              // Classe específica do botão
-      '.main-btn.start-main-check-btn',     // Combinação de classes
-      'button.start-main-check-btn',        // Tag + classe
-      'button.main-btn.start-main-check-btn', // Tag + ambas classes
-      'button[class*="start-main-check-btn"]' // Atributo que contém a classe
-    ];
-
-    let buttonFound = false;
-    let button = null;
-
-    // Tentar encontrar o botão usando diferentes seletores
-    for (const selector of possibleSelectors) {
-      try {
-        button = await page.waitForSelector(selector, { timeout: 10000 });
-        if (button) {
-          buttonFound = true;
-          logger.info(`Botão encontrado com seletor: ${selector}`);
-          break;
-        }
-      } catch (e) {
-        // Continue tentando outros seletores
-        continue;
+  
+  async checkExtensionLoaded() {
+    try {
+      logger.info("Verificando se extensão foi carregada...");
+      
+      await this.page.goto('chrome://extensions/');
+      await this.page.waitForTimeout(3000);
+      
+      // Verificar se há extensões carregadas
+      const extensions = await this.page.$$eval('.extension-list-item, [class*="extension"]', 
+        elements => elements.length
+      );
+      
+      if (extensions > 0) {
+        logger.info(`Encontradas ${extensions} extensões carregadas`);
+        
+        // Capturar screenshot da página de extensões
+        const screenshot = await this.page.screenshot({ type: 'png' });
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `extensions-check-${timestamp}.png`;
+        const filePath = path.join(screenshotsDir, fileName);
+        
+        fs.writeFileSync(filePath, screenshot);
+        logger.info(`Screenshot das extensões salvo: ${fileName}`);
+        
+        return true;
+      } else {
+        logger.warning("Nenhuma extensão encontrada");
+        return false;
       }
+      
+    } catch (error) {
+      logger.error(`Erro ao verificar extensões: ${error.message}`);
+      return false;
     }
-
-    // Se não encontrou com seletores específicos, tentar busca mais ampla
-    if (!buttonFound) {
-      logger.info('Tentando encontrar botão por texto...');
-      try {
-        // Procurar especificamente pelo texto "Pré Análise"
-        button = await page.locator('button').filter({ hasText: /pré análise/i }).first();
-        await button.waitFor({ timeout: 10000 });
-        buttonFound = true;
-        logger.info('Botão encontrado por texto "Pré Análise"');
-      } catch (e) {
-        // Tentar outras variações de texto
-        try {
-          button = await page.locator('button').filter({ hasText: /pre análise/i }).first();
-          await button.waitFor({ timeout: 5000 });
-          buttonFound = true;
-          logger.info('Botão encontrado por texto "Pre Análise"');
-        } catch (e2) {
-          logger.error('Não foi possível encontrar o botão da extensão');
+  }
+  
+  async navigateToUrl(url) {
+    try {
+      logger.info(`Navegando para: ${url}`);
+      await this.page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+      await this.page.waitForTimeout(5000);
+      return true;
+    } catch (error) {
+      logger.error(`Erro ao navegar para ${url}: ${error.message}`);
+      return false;
+    }
+  }
+  
+  async performLoginIfNeeded(loginUrl = null, username = null, password = null) {
+    try {
+      if (!loginUrl) {
+        logger.info("URL de login não fornecida");
+        return true;
+      }
+      
+      logger.info(`Realizando login em: ${loginUrl}`);
+      await this.page.goto(loginUrl, { waitUntil: 'networkidle', timeout: 60000 });
+      await this.page.waitForTimeout(3000);
+      
+      // Verificar se já está logado
+      if (await this.checkIfAlreadyLoggedIn()) {
+        logger.info("Usuário já está logado");
+        return true;
+      }
+      
+      // Tentar login automático se credenciais fornecidas
+      if (username && password) {
+        const success = await this.autoFillLogin(username, password);
+        if (success) {
+          logger.info("Login realizado com sucesso");
+          return true;
         }
       }
-    }
-
-    if (!buttonFound) {
-      throw new Error('Botão da extensão não encontrado na página');
-    }
-
-    // Clicar no botão
-    logger.info('Clicando no botão da extensão...');
-    await button.click();
-
-    // Aguardar o processo (5 minutos por padrão)
-    logger.info(`Aguardando processo por ${waitTime / 1000} segundos...`);
-    
-    // Monitorar mudanças na página durante a espera de forma mais robusta
-    const startTime = Date.now();
-    let processComplete = false;
-    
-    while (Date.now() - startTime < waitTime && !processComplete) {
+      
+      // Aguardar login manual
+      logger.info("Aguardando login manual por 60 segundos...");
       try {
-        // Verificar se a página ainda existe e está acessível
-        if (page.isClosed()) {
-          logger.info('Página foi fechada pela extensão, tentando reabrir...');
-          page = await context.newPage();
-          await page.waitForTimeout(2000);
+        await this.page.waitForFunction(
+          `() => window.location.href !== "${loginUrl}" || document.querySelector('.logged-in, .user-menu, [class*="profile"]') !== null`,
+          { timeout: 60000 }
+        );
+        logger.info("Login detectado");
+        return true;
+      } catch {
+        logger.warning("Timeout no login - continuando");
+        return true;
+      }
+      
+    } catch (error) {
+      logger.error(`Erro no login: ${error.message}`);
+      return false;
+    }
+  }
+  
+  async checkIfAlreadyLoggedIn() {
+    try {
+      const loginIndicators = [
+        '.user-menu', '.profile', '.logout', '.dashboard',
+        '[class*="logged-in"]', '[class*="authenticated"]', '.user-avatar'
+      ];
+      
+      for (const indicator of loginIndicators) {
+        const element = await this.page.$(indicator);
+        if (element && await element.isVisible()) {
+          return true;
         }
-
-        // Verificar se o contexto ainda existe
-        if (context.pages().length === 0) {
-          logger.info('Todas as páginas foram fechadas, criando nova página...');
-          page = await context.newPage();
-          await page.waitForTimeout(2000);
-        }
-
-        // Se houver múltiplas páginas/abas abertas, monitorar a mais recente
-        const pages = context.pages();
-        if (pages.length > 1) {
-          logger.info(`Detectadas ${pages.length} abas abertas, monitorando a mais recente...`);
-          page = pages[pages.length - 1]; // Usar a página mais recente
-        }
-
-        // Aguardar a página carregar se houve redirecionamento
+      }
+      
+      const currentUrl = this.page.url();
+      return ['dashboard', 'profile', 'account', 'home'].some(keyword => 
+        currentUrl.includes(keyword)
+      );
+      
+    } catch (error) {
+      logger.error(`Erro ao verificar login: ${error.message}`);
+      return false;
+    }
+  }
+  
+  async autoFillLogin(username, password) {
+    try {
+      const usernameSelectors = [
+        'input[type="email"]', 'input[name="email"]', 'input[name="username"]',
+        'input[id*="email"]', 'input[id*="username"]', '#email', '#username'
+      ];
+      
+      const passwordSelectors = [
+        'input[type="password"]', 'input[name="password"]', 
+        'input[id*="password"]', '#password'
+      ];
+      
+      // Preencher username
+      let usernameFilled = false;
+      for (const selector of usernameSelectors) {
         try {
-          await page.waitForLoadState('networkidle', { timeout: 5000 });
-        } catch (e) {
-          // Se não conseguir aguardar o networkidle, continue
-        }
-
-        // Verificar indicadores de que o processo terminou
-        const completionIndicators = [
-          '.process-complete',
-          '.success',
-          '.finished',
-          '.done',
-          '.analysis-complete',
-          '.result',
-          '.results',
-          '[data-status="complete"]',
-          '[data-status="success"]',
-          // Indicadores específicos que podem aparecer após a análise
-          '.analysis-result',
-          '.check-complete',
-          '.verification-complete'
-        ];
-
-        for (const indicator of completionIndicators) {
-          try {
-            const element = await page.locator(indicator).first();
-            if (await element.isVisible().catch(() => false)) {
-              processComplete = true;
-              logger.info(`Processo concluído - indicador encontrado: ${indicator}`);
-              break;
-            }
-          } catch (e) {
-            // Continuar verificando outros indicadores
-            continue;
-          }
-        }
-
-        // Verificar se o URL mudou significativamente (pode indicar conclusão)
-        const currentUrl = page.url();
-        if (currentUrl.includes('result') || currentUrl.includes('complete') || 
-            currentUrl.includes('finish') || currentUrl.includes('done')) {
-          logger.info(`Processo possivelmente concluído - URL final: ${currentUrl}`);
-          processComplete = true;
-          break;
-        }
-
-        // Verificar por texto que indica conclusão
-        try {
-          const pageContent = await page.textContent('body');
-          if (pageContent && (
-            pageContent.toLowerCase().includes('análise concluída') ||
-            pageContent.toLowerCase().includes('processo finalizado') ||
-            pageContent.toLowerCase().includes('resultado') ||
-            pageContent.toLowerCase().includes('completo')
-          )) {
-            logger.info('Processo concluído - texto de conclusão detectado');
-            processComplete = true;
+          const element = await this.page.waitForSelector(selector, { timeout: 5000 });
+          if (await element.isVisible()) {
+            await element.fill(username);
+            usernameFilled = true;
+            logger.info(`Username preenchido: ${selector}`);
             break;
           }
-        } catch (e) {
-          // Se não conseguir ler o conteúdo, continue
-        }
-
-        if (!processComplete) {
-          await page.waitForTimeout(5000); // Aguardar 5 segundos antes de verificar novamente
-        }
-
-      } catch (error) {
-        logger.warn(`Erro durante monitoramento (continuando): ${error.message}`);
-        
-        try {
-          // Tentar recuperar se houver erro
-          if (page.isClosed() || !page) {
-            logger.info('Tentando recuperar página perdida...');
-            const pages = context.pages();
-            if (pages.length > 0) {
-              page = pages[pages.length - 1];
-            } else {
-              page = await context.newPage();
-            }
-          }
-          
-          await page.waitForTimeout(5000);
-        } catch (recoveryError) {
-          logger.error(`Erro na recuperação: ${recoveryError.message}`);
-          // Continue o loop mesmo com erro
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        }
+        } catch { continue; }
       }
+      
+      if (!usernameFilled) return false;
+      
+      // Preencher password
+      let passwordFilled = false;
+      for (const selector of passwordSelectors) {
+        try {
+          const element = await this.page.waitForSelector(selector, { timeout: 5000 });
+          if (await element.isVisible()) {
+            await element.fill(password);
+            passwordFilled = true;
+            logger.info(`Password preenchido: ${selector}`);
+            break;
+          }
+        } catch { continue; }
+      }
+      
+      if (!passwordFilled) return false;
+      
+      // Clicar submit
+      const submitSelectors = [
+        'button[type="submit"]', 'input[type="submit"]',
+        'button[class*="login"]', '.login-button'
+      ];
+      
+      for (const selector of submitSelectors) {
+        try {
+          const element = await this.page.waitForSelector(selector, { timeout: 5000 });
+          if (await element.isVisible()) {
+            await element.click();
+            await this.page.waitForTimeout(3000);
+            return true;
+          }
+        } catch { continue; }
+      }
+      
+      return false;
+      
+    } catch (error) {
+      logger.error(`Erro no auto-fill: ${error.message}`);
+      return false;
     }
-
-    // Capturar screenshot final (com tratamento de erro)
-    let screenshot = null;
-    let screenshotUrl = null;
+  }
+  
+  async findAndClickButton(selectors = null) {
+    if (!selectors) {
+      selectors = [
+        '.start-main-check-btn',
+        'button.start-main-check-btn',
+        '.main-btn.start-main-check-btn',
+        'button.main-btn.start-main-check-btn'
+      ];
+    }
     
     try {
-      // Tentar capturar screenshot da página final
-      const pages = context.pages();
-      const finalPage = pages.length > 0 ? pages[pages.length - 1] : page;
+      logger.info("Procurando botão...");
+      
+      // Tentar cada seletor
+      for (const selector of selectors) {
+        try {
+          const element = await this.page.waitForSelector(selector, { timeout: 10000 });
+          if (await element.isVisible()) {
+            await element.click();
+            logger.info(`Botão clicado: ${selector}`);
+            return true;
+          }
+        } catch { continue; }
+      }
+      
+      // Buscar por texto como fallback
+      logger.info('Buscando botão por texto...');
+      try {
+        const button = await this.page.locator('button').filter({ hasText: /pré análise|pre análise/i }).first();
+        await button.waitFor({ timeout: 10000 });
+        await button.click();
+        logger.info('Botão encontrado por texto "Pré Análise"');
+        return true;
+      } catch {
+        logger.error('Botão não encontrado');
+        return false;
+      }
+      
+    } catch (error) {
+      logger.error(`Erro ao procurar botão: ${error.message}`);
+      return false;
+    }
+  }
+  
+  async waitForCompletion(waitTime = 300, completionSelectors = null) {
+    if (!completionSelectors) {
+      completionSelectors = [
+        '.process-complete', '.success', '.finished', '.done',
+        '.analysis-complete', '.result', '.results',
+        '[data-status="complete"]', '[data-status="success"]'
+      ];
+    }
+    
+    try {
+      logger.info(`Aguardando conclusão por ${waitTime} segundos...`);
+      const startTime = Date.now();
+      
+      while (Date.now() - startTime < waitTime * 1000) {
+        try {
+          // Verificar se página ainda existe
+          if (this.page.isClosed()) {
+            logger.info('Página fechada, recuperando...');
+            const pages = this.context.pages();
+            this.page = pages.length > 0 ? pages[pages.length - 1] : await this.context.newPage();
+          }
+          
+          // Verificar múltiplas páginas
+          const pages = this.context.pages();
+          if (pages.length > 1) {
+            logger.info(`${pages.length} abas abertas, usando a mais recente`);
+            this.page = pages[pages.length - 1];
+          }
+          
+          // Aguardar carregamento
+          try {
+            await this.page.waitForLoadState('networkidle', { timeout: 5000 });
+          } catch { /* continuar */ }
+          
+          // Verificar indicadores de conclusão
+          for (const indicator of completionSelectors) {
+            try {
+              const element = await this.page.$(indicator);
+              if (element && await element.isVisible()) {
+                logger.info(`Processo concluído: ${indicator}`);
+                return true;
+              }
+            } catch { continue; }
+          }
+          
+          // Verificar URL para indicação de conclusão
+          const currentUrl = this.page.url();
+          if (['result', 'complete', 'finish', 'done'].some(keyword => 
+            currentUrl.includes(keyword))) {
+            logger.info(`Conclusão detectada pela URL: ${currentUrl}`);
+            return true;
+          }
+          
+          // Verificar texto na página
+          try {
+            const content = await this.page.textContent('body');
+            if (content && ['análise concluída', 'processo finalizado', 'resultado', 'completo'].some(keyword => 
+              content.toLowerCase().includes(keyword))) {
+              logger.info('Conclusão detectada pelo texto');
+              return true;
+            }
+          } catch { /* continuar */ }
+          
+          await this.page.waitForTimeout(5000);
+          
+        } catch (error) {
+          logger.warn(`Erro durante monitoramento: ${error.message}`);
+          try {
+            if (this.page.isClosed()) {
+              const pages = this.context.pages();
+              this.page = pages.length > 0 ? pages[pages.length - 1] : await this.context.newPage();
+            }
+            await this.page.waitForTimeout(5000);
+          } catch { /* continuar */ }
+        }
+      }
+      
+      logger.info('Timeout atingido');
+      return true;
+      
+    } catch (error) {
+      logger.error(`Erro na espera: ${error.message}`);
+      return false;
+    }
+  }
+  
+  async takeScreenshot() {
+    try {
+      const pages = this.context.pages();
+      const finalPage = pages.length > 0 ? pages[pages.length - 1] : this.page;
       
       if (finalPage && !finalPage.isClosed()) {
         const screenshotBuffer = await finalPage.screenshot({ 
@@ -358,88 +428,216 @@ app.post('/automate', async (req, res) => {
           type: 'png'
         });
         
-        // Salvar screenshot como arquivo
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const fileName = `screenshot-${timestamp}.png`;
         const filePath = path.join(screenshotsDir, fileName);
         
         fs.writeFileSync(filePath, screenshotBuffer);
-        
-        // URL para download
-        screenshotUrl = `/screenshots/${fileName}`;
-        
         logger.info(`Screenshot salvo: ${fileName}`);
+        
+        return `/screenshots/${fileName}`;
       }
-    } catch (screenshotError) {
-      logger.warn(`Erro ao capturar screenshot: ${screenshotError.message}`);
+      
+      return null;
+      
+    } catch (error) {
+      logger.warn(`Erro ao capturar screenshot: ${error.message}`);
+      return null;
     }
-
-    // Obter informações finais da página (com tratamento de erro)
-    let finalUrl = url;
-    let title = '';
-    
+  }
+  
+  getPageInfo() {
     try {
-      const pages = context.pages();
-      const finalPage = pages.length > 0 ? pages[pages.length - 1] : page;
+      const pages = this.context.pages();
+      const finalPage = pages.length > 0 ? pages[pages.length - 1] : this.page;
       
       if (finalPage && !finalPage.isClosed()) {
-        finalUrl = finalPage.url();
-        title = await finalPage.title();
+        return {
+          url: finalPage.url(),
+          title: finalPage.evaluate(() => document.title),
+          timestamp: new Date().toISOString()
+        };
       }
-    } catch (infoError) {
-      logger.warn(`Erro ao obter informações da página: ${infoError.message}`);
+      
+      return { timestamp: new Date().toISOString() };
+      
+    } catch (error) {
+      logger.error(`Erro ao obter info da página: ${error.message}`);
+      return { timestamp: new Date().toISOString() };
+    }
+  }
+  
+  async cleanup() {
+    try {
+      if (this.page && !this.page.isClosed()) await this.page.close();
+      if (this.context) await this.context.close();
+      if (this.browser) await this.browser.close();
+      logger.info("Recursos liberados");
+    } catch (error) {
+      logger.error(`Erro na limpeza: ${error.message}`);
+    }
+  }
+}
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    service: 'Playwright Automation Service'
+  });
+});
+
+// Listar screenshots
+app.get('/screenshots', (req, res) => {
+  try {
+    const files = fs.readdirSync(screenshotsDir)
+      .filter(file => file.endsWith('.png'))
+      .map(file => {
+        const stats = fs.statSync(path.join(screenshotsDir, file));
+        return {
+          filename: file,
+          url: `/screenshots/${file}`,
+          size: stats.size,
+          created: stats.birthtime.toISOString()
+        };
+      })
+      .sort((a, b) => new Date(b.created) - new Date(a.created));
+    
+    res.json({ success: true, screenshots: files, count: files.length });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Limpar screenshots antigos
+app.delete('/screenshots/cleanup', (req, res) => {
+  try {
+    const daysOld = parseInt(req.query.daysOld) || 7;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+    
+    const files = fs.readdirSync(screenshotsDir);
+    let deletedCount = 0;
+    
+    files.forEach(file => {
+      const filePath = path.join(screenshotsDir, file);
+      const stats = fs.statSync(filePath);
+      
+      if (stats.birthtime < cutoffDate) {
+        fs.unlinkSync(filePath);
+        deletedCount++;
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: `${deletedCount} screenshots removidos`,
+      deletedCount
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Endpoint principal de automação
+app.post('/automate', async (req, res) => {
+  let automation = null;
+  
+  try {
+    const {
+      url,
+      wait_time = 300,
+      button_selectors = [],
+      completion_selectors = [],
+      login_url,
+      username,
+      password,
+      headless = true,
+      enable_vnc = false
+    } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL é obrigatória' });
     }
     
-    logger.info('Automação concluída com sucesso');
-
+    logger.info(`Iniciando automação para: ${url}`);
+    
+    automation = new PlaywrightAutomation();
+    
+    // Configurar browser
+    if (!(await automation.setupBrowser('/chrome-extension', headless, enable_vnc))) {
+      throw new Error('Falha ao configurar browser');
+    }
+    
+    // Verificar extensão
+    const extensionLoaded = await automation.checkExtensionLoaded();
+    
+    // Realizar login se necessário
+    if (login_url) {
+      await automation.performLoginIfNeeded(login_url, username, password);
+    }
+    
+    // Navegar para URL principal
+    if (!(await automation.navigateToUrl(url))) {
+      throw new Error('Falha ao navegar para URL');
+    }
+    
+    // Encontrar e clicar botão
+    const selectors = button_selectors.length > 0 ? button_selectors : null;
+    if (!(await automation.findAndClickButton(selectors))) {
+      throw new Error('Falha ao encontrar/clicar no botão');
+    }
+    
+    // Aguardar conclusão
+    const completionSels = completion_selectors.length > 0 ? completion_selectors : null;
+    await automation.waitForCompletion(wait_time, completionSels);
+    
+    // Capturar resultado
+    const screenshotUrl = await automation.takeScreenshot();
+    const pageInfo = automation.getPageInfo();
+    
     res.json({
       success: true,
       message: 'Automação concluída com sucesso',
       data: {
-        initialUrl: url,
-        finalUrl: finalUrl,
-        title: title,
-        processTime: Date.now() - startTime,
-        screenshotUrl: screenshotUrl,
-        timestamp: new Date().toISOString()
+        initial_url: url,
+        final_url: pageInfo.url || url,
+        title: pageInfo.title || '',
+        screenshot_url: screenshotUrl,
+        extension_loaded: extensionLoaded,
+        login_performed: !!login_url,
+        wait_time_used: wait_time,
+        timestamp: pageInfo.timestamp
       }
     });
-
+    
   } catch (error) {
     logger.error(`Erro na automação: ${error.message}`);
     
-    // Capturar screenshot do erro se a página existir
+    // Screenshot de erro
     let errorScreenshotUrl = null;
-    if (page && !page.isClosed()) {
+    if (automation && automation.page && !automation.page.isClosed()) {
       try {
-        const errorScreenshotBuffer = await page.screenshot({ type: 'png' });
-        
-        // Salvar screenshot de erro
+        const errorScreenshot = await automation.page.screenshot({ type: 'png' });
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const fileName = `error-screenshot-${timestamp}.png`;
         const filePath = path.join(screenshotsDir, fileName);
-        
-        fs.writeFileSync(filePath, errorScreenshotBuffer);
+        fs.writeFileSync(filePath, errorScreenshot);
         errorScreenshotUrl = `/screenshots/${fileName}`;
-        
-        logger.info(`Screenshot de erro salvo: ${fileName}`);
-      } catch (e) {
-        logger.warn(`Erro ao capturar screenshot de erro: ${e.message}`);
-      }
+      } catch { /* ignorar */ }
     }
-
+    
     res.status(500).json({
       success: false,
       error: error.message,
-      screenshotUrl: errorScreenshotUrl,
+      screenshot_url: errorScreenshotUrl,
       timestamp: new Date().toISOString()
     });
-
   } finally {
-    // Limpeza
-    if (page) await page.close().catch(() => {});
-    if (context) await context.close().catch(() => {});
-    if (browser) await browser.close().catch(() => {});
+    if (automation) {
+      await automation.cleanup();
+    }
   }
 });
 
@@ -449,12 +647,12 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('Recebido SIGTERM, encerrando servidor...');
+process.on('SIGTERM', () => {
+  logger.info('Encerrando servidor...');
   process.exit(0);
 });
 
-process.on('SIGINT', async () => {
-  logger.info('Recebido SIGINT, encerrando servidor...');
+process.on('SIGINT', () => {
+  logger.info('Encerrando servidor...');
   process.exit(0);
 });

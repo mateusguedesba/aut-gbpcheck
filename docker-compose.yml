@@ -1,55 +1,38 @@
 services:
-  n8n:
-    image: n8nio/n8n:latest
-    container_name: n8n_automation
-    restart: unless-stopped
-    environment:
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=sua_senha_aqui
-      - WEBHOOK_URL=https://seu-dominio.easypanel.app/
-      - GENERIC_TIMEZONE=America/Sao_Paulo
-      - N8N_SECURE_COOKIE=false
-      - NODE_ENV=production
-      - N8N_LOG_LEVEL=info
-      - N8N_METRICS=true
-      - N8N_DISABLE_UI=false
-    ports:
-      - "5679:5679"
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - n8n_files:/files
-      - ./chrome-extension:/chrome-extension:ro
-    depends_on:
-      - playwright-service
-    networks:
-      - n8n_network
-
   playwright-service:
     build:
       context: .
       dockerfile: Dockerfile.playwright
-    container_name: playwright_service
+    container_name: playwright_automation
     restart: unless-stopped
     environment:
       - NODE_ENV=production
+      - TZ=America/Sao_Paulo
     volumes:
       - ./chrome-extension:/chrome-extension:ro
       - playwright_data:/app/data
     ports:
-      - "3002:3002"
-    networks:
-      - n8n_network
+      - "80:3001"  # Porta 80 para acesso direto
     cap_add:
       - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
 
-volumes:
-  n8n_data:
-  n8n_files:
-  playwright_data:
+  # VNC Server para visualização remota (opcional)
+  vnc-server:
+    image: dorowu/ubuntu-desktop-lxde-vnc:latest
+    container_name: vnc_server
+    restart: unless-stopped
+    ports:
+      - "6080:80"  # noVNC web interface
+      - "5901:5900"  # VNC port
+    environment:
+      - VNC_PASSWORD=playwright123
+      - RESOLUTION=1920x1080
+    volumes:
+      - /dev/shm:/dev/shm
+    profiles:
+      - vnc  # Opcional - ativar só quando precisar
 
-networks:
-  n8n_network:
-    driver: bridge
+volumes:
+  playwright_data:
