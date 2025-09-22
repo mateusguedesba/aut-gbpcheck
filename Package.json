@@ -1,7 +1,7 @@
 {
   "name": "n8n-playwright-service",
   "version": "1.0.0",
-  "description": "Serviço Playwright para N8N com suporte a extensões",
+  "description": "Serviço Playwright para N8N com suporte a extensão",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
