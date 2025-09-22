@@ -31,8 +31,6 @@ services:
       - RESOLUTION=1920x1080
     volumes:
       - /dev/shm:/dev/shm
-    profiles:
-      - vnc  # Opcional - ativar só quando precisar
 
 volumes:
   playwright_data:
