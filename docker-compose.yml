@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n_automation
+    restart: unless-stopped
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=sua_senha_aqui
+      - WEBHOOK_URL=https://seu-dominio.easypanel.app/
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - N8N_SECURE_COOKIE=false
+      - NODE_ENV=production
+      - N8N_LOG_LEVEL=info
+      - N8N_METRICS=true
+      - N8N_DISABLE_UI=false
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - n8n_files:/files
+      - ./chrome-extension:/chrome-extension:ro
+    depends_on:
+      - playwright-service
+    networks:
+      - n8n_network
+
+  playwright-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    container_name: playwright_service
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./chrome-extension:/chrome-extension:ro
+      - playwright_data:/app/data
+    ports:
+      - "3001:3001"
+    networks:
+      - n8n_network
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+
+volumes:
+  n8n_data:
+  n8n_files:
+  playwright_data:
+
+networks:
+  n8n_network:
+    driver: bridge
