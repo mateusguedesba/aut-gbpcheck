@@ -15,7 +15,7 @@ services:
       - N8N_METRICS=true
       - N8N_DISABLE_UI=false
     ports:
-      - "5678:5678"
+      - "5679:5679"
     volumes:
       - n8n_data:/home/node/.n8n
       - n8n_files:/files
@@ -37,7 +37,7 @@ services:
       - ./chrome-extension:/chrome-extension:ro
       - playwright_data:/app/data
     ports:
-      - "3001:3001"
+      - "3002:3002"
     networks:
       - n8n_network
     cap_add:
