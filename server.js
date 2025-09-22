@@ -6,7 +6,7 @@ const winston = require('winston');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3001;
 
 // Configurar logger
 const logger = winston.createLogger({
@@ -65,7 +65,7 @@ app.post('/automate', async (req, res) => {
 
     // Iniciar browser
     browser = await chromium.launch({
-      headless: true, // Necessário para extensões funcionarem
+      headless: true, // ← MUDANÇA: true em vez de false
       args: browserArgs,
       slowMo: 100
     });
@@ -89,14 +89,13 @@ app.post('/automate', async (req, res) => {
     // Aguardar o botão da extensão aparecer
     logger.info('Aguardando botão da extensão...');
     
-    // Seletores possíveis para o botão da extensão
+    // Seletores específicos para o botão "Pré Análise"
     const possibleSelectors = [
-      '[data-extension-button]',
-      '.extension-button',
-      '#extension-button',
-      'button[class*="extension"]',
-      'div[class*="extension"] button',
-      '.chrome-extension-button'
+      '.start-main-check-btn',              // Classe específica do botão
+      '.main-btn.start-main-check-btn',     // Combinação de classes
+      'button.start-main-check-btn',        // Tag + classe
+      'button.main-btn.start-main-check-btn', // Tag + ambas classes
+      'button[class*="start-main-check-btn"]' // Atributo que contém a classe
     ];
 
     let buttonFound = false;
@@ -121,13 +120,21 @@ app.post('/automate', async (req, res) => {
     if (!buttonFound) {
       logger.info('Tentando encontrar botão por texto...');
       try {
-        // Procurar por botões que possam conter texto relacionado à extensão
-        button = await page.locator('button').filter({ hasText: /start|iniciar|process|processar|execute|executar/i }).first();
+        // Procurar especificamente pelo texto "Pré Análise"
+        button = await page.locator('button').filter({ hasText: /pré análise/i }).first();
         await button.waitFor({ timeout: 10000 });
         buttonFound = true;
-        logger.info('Botão encontrado por texto');
+        logger.info('Botão encontrado por texto "Pré Análise"');
       } catch (e) {
-        logger.error('Não foi possível encontrar o botão da extensão');
+        // Tentar outras variações de texto
+        try {
+          button = await page.locator('button').filter({ hasText: /pre análise/i }).first();
+          await button.waitFor({ timeout: 5000 });
+          buttonFound = true;
+          logger.info('Botão encontrado por texto "Pre Análise"');
+        } catch (e2) {
+          logger.error('Não foi possível encontrar o botão da extensão');
+        }
       }
     }
 
@@ -142,49 +149,157 @@ app.post('/automate', async (req, res) => {
     // Aguardar o processo (5 minutos por padrão)
     logger.info(`Aguardando processo por ${waitTime / 1000} segundos...`);
     
-    // Monitorar mudanças na página durante a espera
+    // Monitorar mudanças na página durante a espera de forma mais robusta
     const startTime = Date.now();
     let processComplete = false;
     
     while (Date.now() - startTime < waitTime && !processComplete) {
       try {
+        // Verificar se a página ainda existe e está acessível
+        if (page.isClosed()) {
+          logger.info('Página foi fechada pela extensão, tentando reabrir...');
+          page = await context.newPage();
+          await page.waitForTimeout(2000);
+        }
+
+        // Verificar se o contexto ainda existe
+        if (context.pages().length === 0) {
+          logger.info('Todas as páginas foram fechadas, criando nova página...');
+          page = await context.newPage();
+          await page.waitForTimeout(2000);
+        }
+
+        // Se houver múltiplas páginas/abas abertas, monitorar a mais recente
+        const pages = context.pages();
+        if (pages.length > 1) {
+          logger.info(`Detectadas ${pages.length} abas abertas, monitorando a mais recente...`);
+          page = pages[pages.length - 1]; // Usar a página mais recente
+        }
+
+        // Aguardar a página carregar se houve redirecionamento
+        try {
+          await page.waitForLoadState('networkidle', { timeout: 5000 });
+        } catch (e) {
+          // Se não conseguir aguardar o networkidle, continue
+        }
+
         // Verificar indicadores de que o processo terminou
         const completionIndicators = [
           '.process-complete',
           '.success',
           '.finished',
           '.done',
+          '.analysis-complete',
+          '.result',
+          '.results',
           '[data-status="complete"]',
-          '[data-status="success"]'
+          '[data-status="success"]',
+          // Indicadores específicos que podem aparecer após a análise
+          '.analysis-result',
+          '.check-complete',
+          '.verification-complete'
         ];
 
         for (const indicator of completionIndicators) {
-          const element = await page.locator(indicator).first();
-          if (await element.isVisible().catch(() => false)) {
+          try {
+            const element = await page.locator(indicator).first();
+            if (await element.isVisible().catch(() => false)) {
+              processComplete = true;
+              logger.info(`Processo concluído - indicador encontrado: ${indicator}`);
+              break;
+            }
+          } catch (e) {
+            // Continuar verificando outros indicadores
+            continue;
+          }
+        }
+
+        // Verificar se o URL mudou significativamente (pode indicar conclusão)
+        const currentUrl = page.url();
+        if (currentUrl.includes('result') || currentUrl.includes('complete') || 
+            currentUrl.includes('finish') || currentUrl.includes('done')) {
+          logger.info(`Processo possivelmente concluído - URL final: ${currentUrl}`);
+          processComplete = true;
+          break;
+        }
+
+        // Verificar por texto que indica conclusão
+        try {
+          const pageContent = await page.textContent('body');
+          if (pageContent && (
+            pageContent.toLowerCase().includes('análise concluída') ||
+            pageContent.toLowerCase().includes('processo finalizado') ||
+            pageContent.toLowerCase().includes('resultado') ||
+            pageContent.toLowerCase().includes('completo')
+          )) {
+            logger.info('Processo concluído - texto de conclusão detectado');
             processComplete = true;
-            logger.info(`Processo concluído - indicador encontrado: ${indicator}`);
             break;
           }
+        } catch (e) {
+          // Se não conseguir ler o conteúdo, continue
         }
 
         if (!processComplete) {
           await page.waitForTimeout(5000); // Aguardar 5 segundos antes de verificar novamente
         }
-      } catch (e) {
-        // Continue aguardando
-        await page.waitForTimeout(5000);
+
+      } catch (error) {
+        logger.warn(`Erro durante monitoramento (continuando): ${error.message}`);
+        
+        try {
+          // Tentar recuperar se houver erro
+          if (page.isClosed() || !page) {
+            logger.info('Tentando recuperar página perdida...');
+            const pages = context.pages();
+            if (pages.length > 0) {
+              page = pages[pages.length - 1];
+            } else {
+              page = await context.newPage();
+            }
+          }
+          
+          await page.waitForTimeout(5000);
+        } catch (recoveryError) {
+          logger.error(`Erro na recuperação: ${recoveryError.message}`);
+          // Continue o loop mesmo com erro
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
       }
     }
 
-    // Capturar screenshot final
-    const screenshot = await page.screenshot({ 
-      fullPage: true,
-      type: 'png'
-    });
+    // Capturar screenshot final (com tratamento de erro)
+    let screenshot = null;
+    try {
+      // Tentar capturar screenshot da página final
+      const pages = context.pages();
+      const finalPage = pages.length > 0 ? pages[pages.length - 1] : page;
+      
+      if (finalPage && !finalPage.isClosed()) {
+        screenshot = await finalPage.screenshot({ 
+          fullPage: true,
+          type: 'png'
+        });
+      }
+    } catch (screenshotError) {
+      logger.warn(`Erro ao capturar screenshot: ${screenshotError.message}`);
+    }
 
-    // Obter informações finais da página
-    const finalUrl = page.url();
-    const title = await page.title();
+    // Obter informações finais da página (com tratamento de erro)
+    let finalUrl = url;
+    let title = '';
+    
+    try {
+      const pages = context.pages();
+      const finalPage = pages.length > 0 ? pages[pages.length - 1] : page;
+      
+      if (finalPage && !finalPage.isClosed()) {
+        finalUrl = finalPage.url();
+        title = await finalPage.title();
+      }
+    } catch (infoError) {
+      logger.warn(`Erro ao obter informações da página: ${infoError.message}`);
+    }
     
     logger.info('Automação concluída com sucesso');
 
