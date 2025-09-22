@@ -48,8 +48,25 @@ class PlaywrightAutomation {
     this.userDataDir = userDataDir;
   }
   
-  async setupBrowser(extensionPath = "/chrome-extension", headless = false, enableVnc = true) {
+  async setupBrowser(extensionPath = "/chrome-extension", headless = true, enableVnc = false) {
     try {
+      logger.info(`Configurando browser - headless: ${headless}, VNC: ${enableVnc}, extensão: ${extensionPath}`);
+      
+      // Verificar se diretório da extensão existe
+      if (!fs.existsSync(extensionPath)) {
+        logger.error(`Diretório da extensão não encontrado: ${extensionPath}`);
+        throw new Error(`Extensão não encontrada em: ${extensionPath}`);
+      }
+      
+      // Verificar arquivos da extensão
+      const extensionFiles = fs.readdirSync(extensionPath);
+      logger.info(`Arquivos na extensão: ${extensionFiles.join(', ')}`);
+      
+      if (!extensionFiles.includes('manifest.json')) {
+        logger.error('manifest.json não encontrado na extensão');
+        throw new Error('manifest.json não encontrado na extensão');
+      }
+      
       // Argumentos do Chrome com extensão e dados persistentes
       const browserArgs = [
         '--no-sandbox',
@@ -75,26 +92,51 @@ class PlaywrightAutomation {
         browserArgs.push('--display=:99', '--disable-gpu');
       }
       
+      logger.info(`Argumentos do browser: ${browserArgs.join(' ')}`);
+      
+      // Importar Playwright
+      const { chromium } = require('playwright');
+      
       // Iniciar Chrome
+      logger.info('Iniciando browser Chromium...');
       this.browser = await chromium.launch({
         headless: headless,
         args: browserArgs,
-        slowMo: 100
+        slowMo: 100,
+        timeout: 30000  // 30 segundos de timeout
       });
       
+      logger.info('Browser iniciado com sucesso');
+      
       // Criar contexto
+      logger.info('Criando contexto do browser...');
       this.context = await this.browser.newContext({
         viewport: { width: 1920, height: 1080 },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       });
       
+      logger.info('Contexto criado com sucesso');
+      
       // Criar página
+      logger.info('Criando página...');
       this.page = await this.context.newPage();
+      
       logger.info("Browser configurado com sucesso");
       return true;
       
     } catch (error) {
-      logger.error(`Erro ao configurar browser: ${error.message}`);
+      logger.error(`Erro detalhado ao configurar browser: ${error.message}`);
+      logger.error(`Stack trace: ${error.stack}`);
+      
+      // Tentar limpeza em caso de erro
+      try {
+        if (this.page) await this.page.close();
+        if (this.context) await this.context.close();
+        if (this.browser) await this.browser.close();
+      } catch (cleanupError) {
+        logger.error(`Erro na limpeza: ${cleanupError.message}`);
+      }
+      
       return false;
     }
   }
@@ -488,6 +530,93 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Endpoint de diagnóstico
+app.get('/diagnose', async (req, res) => {
+  try {
+    const diagnosis = {
+      timestamp: new Date().toISOString(),
+      node_version: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      memory: process.memoryUsage(),
+      directories: {},
+      playwright: {},
+      extension: {}
+    };
+    
+    // Verificar diretórios
+    try {
+      diagnosis.directories.screenshots = {
+        exists: fs.existsSync(screenshotsDir),
+        path: screenshotsDir,
+        files: fs.existsSync(screenshotsDir) ? fs.readdirSync(screenshotsDir).length : 0
+      };
+      
+      diagnosis.directories.userData = {
+        exists: fs.existsSync(userDataDir),
+        path: userDataDir,
+        files: fs.existsSync(userDataDir) ? fs.readdirSync(userDataDir).length : 0
+      };
+    } catch (e) {
+      diagnosis.directories.error = e.message;
+    }
+    
+    // Verificar extensão
+    try {
+      const extensionPath = '/chrome-extension';
+      diagnosis.extension = {
+        path: extensionPath,
+        exists: fs.existsSync(extensionPath),
+        files: fs.existsSync(extensionPath) ? fs.readdirSync(extensionPath) : [],
+        manifest_exists: fs.existsSync(path.join(extensionPath, 'manifest.json'))
+      };
+      
+      if (diagnosis.extension.manifest_exists) {
+        const manifestContent = fs.readFileSync(path.join(extensionPath, 'manifest.json'), 'utf8');
+        diagnosis.extension.manifest = JSON.parse(manifestContent);
+      }
+    } catch (e) {
+      diagnosis.extension.error = e.message;
+    }
+    
+    // Verificar Playwright
+    try {
+      const { chromium } = require('playwright');
+      diagnosis.playwright.available = true;
+      
+      // Tentar iniciar browser simples para teste
+      const testBrowser = await chromium.launch({ 
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        timeout: 10000
+      });
+      
+      const testContext = await testBrowser.newContext();
+      const testPage = await testContext.newPage();
+      await testPage.goto('about:blank');
+      
+      diagnosis.playwright.browser_test = 'success';
+      
+      await testPage.close();
+      await testContext.close();
+      await testBrowser.close();
+      
+    } catch (e) {
+      diagnosis.playwright.error = e.message;
+      diagnosis.playwright.browser_test = 'failed';
+    }
+    
+    res.json({ success: true, diagnosis });
+    
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Listar screenshots
 app.get('/screenshots', (req, res) => {
   try {
@@ -553,8 +682,8 @@ app.post('/automate', async (req, res) => {
       login_url,
       username,
       password,
-      headless = false,
-      enable_vnc = true
+      headless = true,
+      enable_vnc = false
     } = req.body;
     
     if (!url) {
