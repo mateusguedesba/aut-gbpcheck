@@ -48,7 +48,7 @@ class PlaywrightAutomation {
     this.userDataDir = userDataDir;
   }
   
-  async setupBrowser(extensionPath = "/chrome-extension", headless = true, enableVnc = false) {
+  async setupBrowser(extensionPath = "/chrome-extension", headless = false, enableVnc = true) {
     try {
       logger.info(`Configurando browser - headless: ${headless}, VNC: ${enableVnc}, extensão: ${extensionPath}`);
       
@@ -682,8 +682,8 @@ app.post('/automate', async (req, res) => {
       login_url,
       username,
       password,
-      headless = true,
-      enable_vnc = false
+      headless = false,
+      enable_vnc = true
     } = req.body;
     
     if (!url) {
