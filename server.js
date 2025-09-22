@@ -4,6 +4,16 @@ const cors = require('cors');
 const helmet = require('helmet');
 const winston = require('winston');
 const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Criar diretório para screenshots
+const screenshotsDir = path.join(__dirname, 'data', 'screenshots');
+if (!fs.existsSync(screenshotsDir)) {
+  fs.mkdirSync(screenshotsDir, { recursive: true });
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,12 +36,80 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// Servir arquivos estáticos (screenshots)
+app.use('/screenshots', express.static(screenshotsDir));
+
 // Rota de health check
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Rota principal para automação
+// Endpoint para listar screenshots
+app.get('/screenshots', (req, res) => {
+  try {
+    const files = fs.readdirSync(screenshotsDir);
+    const screenshots = files
+      .filter(file => file.endsWith('.png'))
+      .map(file => {
+        const filePath = path.join(screenshotsDir, file);
+        const stats = fs.statSync(filePath);
+        return {
+          filename: file,
+          url: `/screenshots/${file}`,
+          size: stats.size,
+          created: stats.birthtime.toISOString()
+        };
+      })
+      .sort((a, b) => new Date(b.created) - new Date(a.created)); // Mais recentes primeiro
+
+    res.json({
+      success: true,
+      screenshots: screenshots,
+      count: screenshots.length
+    });
+  } catch (error) {
+    logger.error(`Erro ao listar screenshots: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Endpoint para limpar screenshots antigos
+app.delete('/screenshots/cleanup', (req, res) => {
+  try {
+    const { daysOld = 7 } = req.query;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - parseInt(daysOld));
+
+    const files = fs.readdirSync(screenshotsDir);
+    let deletedCount = 0;
+
+    files.forEach(file => {
+      const filePath = path.join(screenshotsDir, file);
+      const stats = fs.statSync(filePath);
+      
+      if (stats.birthtime < cutoffDate) {
+        fs.unlinkSync(filePath);
+        deletedCount++;
+        logger.info(`Screenshot removido: ${file}`);
+      }
+    });
+
+    res.json({
+      success: true,
+      message: `${deletedCount} screenshots removidos`,
+      deletedCount: deletedCount
+    });
+  } catch (error) {
+    logger.error(`Erro ao limpar screenshots: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 app.post('/automate', async (req, res) => {
   const { url, waitTime = 300000, extensionPath = '/chrome-extension' } = req.body;
   
@@ -270,16 +348,30 @@ app.post('/automate', async (req, res) => {
 
     // Capturar screenshot final (com tratamento de erro)
     let screenshot = null;
+    let screenshotUrl = null;
+    
     try {
       // Tentar capturar screenshot da página final
       const pages = context.pages();
       const finalPage = pages.length > 0 ? pages[pages.length - 1] : page;
       
       if (finalPage && !finalPage.isClosed()) {
-        screenshot = await finalPage.screenshot({ 
+        const screenshotBuffer = await finalPage.screenshot({ 
           fullPage: true,
           type: 'png'
         });
+        
+        // Salvar screenshot como arquivo
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `screenshot-${timestamp}.png`;
+        const filePath = path.join(screenshotsDir, fileName);
+        
+        fs.writeFileSync(filePath, screenshotBuffer);
+        
+        // URL para download
+        screenshotUrl = `/screenshots/${fileName}`;
+        
+        logger.info(`Screenshot salvo: ${fileName}`);
       }
     } catch (screenshotError) {
       logger.warn(`Erro ao capturar screenshot: ${screenshotError.message}`);
@@ -311,7 +403,7 @@ app.post('/automate', async (req, res) => {
         finalUrl: finalUrl,
         title: title,
         processTime: Date.now() - startTime,
-        screenshot: screenshot.toString('base64'),
+        screenshotUrl: screenshotUrl,
         timestamp: new Date().toISOString()
       }
     });
@@ -320,19 +412,29 @@ app.post('/automate', async (req, res) => {
     logger.error(`Erro na automação: ${error.message}`);
     
     // Capturar screenshot do erro se a página existir
-    let errorScreenshot = null;
-    if (page) {
+    let errorScreenshotUrl = null;
+    if (page && !page.isClosed()) {
       try {
-        errorScreenshot = await page.screenshot({ type: 'png' });
+        const errorScreenshotBuffer = await page.screenshot({ type: 'png' });
+        
+        // Salvar screenshot de erro
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `error-screenshot-${timestamp}.png`;
+        const filePath = path.join(screenshotsDir, fileName);
+        
+        fs.writeFileSync(filePath, errorScreenshotBuffer);
+        errorScreenshotUrl = `/screenshots/${fileName}`;
+        
+        logger.info(`Screenshot de erro salvo: ${fileName}`);
       } catch (e) {
-        // Ignore screenshot errors
+        logger.warn(`Erro ao capturar screenshot de erro: ${e.message}`);
       }
     }
 
     res.status(500).json({
       success: false,
       error: error.message,
-      screenshot: errorScreenshot ? errorScreenshot.toString('base64') : null,
+      screenshotUrl: errorScreenshotUrl,
       timestamp: new Date().toISOString()
     });
 
