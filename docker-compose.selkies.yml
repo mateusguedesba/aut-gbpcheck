@@ -60,7 +60,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '${CPU_LIMIT:-4.0}'
+          cpus: '${CPU_LIMIT:-3.0}'
           memory: '${MEMORY_LIMIT:-8G}'
         reservations:
           cpus: '${CPU_RESERVED:-2.0}'
