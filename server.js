@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3001;
 
 // Criar diretórios necessários
 const screenshotsDir = path.join(__dirname, 'data', 'screenshots');
-const userDataDir = path.join(__dirname, 'data', 'browser-data');
+const userDataDir = path.join(__dirname, 'data', 'chrome-profile'); // Compartilhado com Chrome VNC
 
 [screenshotsDir, userDataDir].forEach(dir => {
   if (!fs.existsSync(dir)) {

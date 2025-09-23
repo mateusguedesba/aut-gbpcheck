@@ -22,6 +22,14 @@ COPY package.json ./
 # Instalar dependências Node.js
 RUN npm install
 
+# Instalar Chrome para VNC e Playwright
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+    echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install -y google-chrome-stable && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Instalar Playwright e browsers
 RUN npx playwright install chromium
 RUN npx playwright install-deps
@@ -34,7 +42,9 @@ COPY chrome-extension /chrome-extension
 
 # Criar diretórios necessários
 RUN mkdir -p /app/data/screenshots && \
-    mkdir -p /app/data/browser-data
+    mkdir -p /app/data/browser-data && \
+    mkdir -p /app/data/chrome-profile && \
+    chown -R 1000:1000 /app/data
 
 # Configurar ambiente
 ENV DISPLAY=:1
@@ -54,6 +64,20 @@ RUN cat > /startup-unified.sh << 'EOF'
 
 # Aguardar VNC inicializar
 sleep 10
+
+# Criar atalho do Chrome no desktop para login manual
+echo "[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Chrome for Login
+Comment=Google Chrome for manual login
+Exec=google-chrome-stable --user-data-dir=/app/data/chrome-profile --no-first-run --disable-default-apps
+Icon=google-chrome
+Terminal=false
+MimeType=text/html;text/xml;application/xhtml+xml;
+Categories=Network;WebBrowser;" > /root/Desktop/chrome-login.desktop
+
+chmod +x /root/Desktop/chrome-login.desktop
 
 # Iniciar servidor Playwright
 cd /app
