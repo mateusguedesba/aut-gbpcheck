@@ -24,6 +24,9 @@ RUN npx playwright install-deps
 # Copiar código da aplicação
 COPY . .
 
+# Copiar extensão do Chrome
+COPY chrome-extension /chrome-extension
+
 # Criar diretório para dados
 RUN mkdir -p /app/data
 

@@ -88,7 +88,7 @@ class PlaywrightAutomation {
       
       // Se VNC estiver habilitado, configurar display
       if (enableVnc && !headless) {
-        browserArgs.push('--display=:99', '--disable-gpu');
+        browserArgs.push('--display=vnc-server:99', '--disable-gpu');
       }
       
       logger.info(`Argumentos do browser: ${browserArgs.join(' ')}`);
