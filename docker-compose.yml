@@ -33,7 +33,7 @@ services:
       - "5901:5900"  # VNC port
     environment:
       - VNC_PASSWORD=playwright123
-      - RESOLUTION=1920x1080
+      - RESOLUTION=800x600
     volumes:
       - /dev/shm:/dev/shm
 

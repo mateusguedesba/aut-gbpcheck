@@ -96,16 +96,56 @@ class PlaywrightAutomation {
       // Importar Playwright
       const { chromium } = require('playwright');
       
+      // Tentar usar Chrome do sistema primeiro, fallback para Chromium
+      let executablePath = null;
+
+      // Caminhos comuns do Chrome no Linux/Debian
+      const chromePaths = [
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/snap/bin/chromium'
+      ];
+
+      for (const path of chromePaths) {
+        if (fs.existsSync(path)) {
+          executablePath = path;
+          logger.info(`Chrome encontrado em: ${path}`);
+          break;
+        }
+      }
+
+      if (!executablePath) {
+        logger.info('Chrome do sistema não encontrado, usando Chromium do Playwright');
+      }
+
       // Usar launchPersistentContext para dados persistentes
-      logger.info('Iniciando browser Chromium com contexto persistente...');
-      this.context = await chromium.launchPersistentContext(this.userDataDir, {
+      logger.info(`Iniciando browser ${executablePath ? 'Chrome do sistema' : 'Chromium'} com contexto persistente...`);
+
+      const contextOptions = {
         headless: headless,
         args: browserArgs,
         slowMo: 100,
         timeout: 30000,
         viewport: { width: 1920, height: 1080 },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      });
+      };
+
+      // Só adicionar executablePath se encontrou o Chrome
+      if (executablePath) {
+        contextOptions.executablePath = executablePath;
+      }
+
+      // Se headless=false (VNC), usar modo não-persistente para evitar lock
+      if (!headless) {
+        logger.info('Modo VNC detectado, usando browser não-persistente');
+        this.browser = await chromium.launch(contextOptions);
+        this.context = await this.browser.newContext();
+      } else {
+        this.context = await chromium.launchPersistentContext(this.userDataDir, contextOptions);
+        this.browser = this.context.browser();
+      }
       
       logger.info('Contexto persistente criado com sucesso');
       
