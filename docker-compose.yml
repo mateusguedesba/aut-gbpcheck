@@ -39,6 +39,7 @@ services:
     volumes:
       - /dev/shm:/dev/shm
     shm_size: 2gb
+    PORT: 6079
     restart: always
 
 volumes:
