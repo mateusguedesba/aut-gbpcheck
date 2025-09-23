@@ -9,7 +9,8 @@
       "Bash(docker ps:*)",
       "Bash(docker exec:*)",
       "Bash(docker-compose:*)",
-      "Bash(docker cp:*)"
+      "Bash(docker cp:*)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []

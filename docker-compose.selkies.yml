@@ -1,0 +1,41 @@
+services:
+  # Container Selkies - WebRTC + Playwright
+  selkies-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.selkies
+    container_name: gbp_automation_selkies
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+      - HEADLESS=false
+      # Selkies Environment Variables
+      - DISPLAY_SIZEW=1920
+      - DISPLAY_SIZEH=1080
+      - DISPLAY_REFRESH=60
+      - DISPLAY_DPI=96
+      - SELKIES_ENABLE_BASIC_AUTH=false
+      - SELKIES_TURN_SHARED_SECRET=mysharedsecret
+      - SELKIES_TURN_USERNAME=selkies
+      - SELKIES_TURN_PASSWORD=selkies123
+    volumes:
+      - playwright_data:/app/data
+      - /dev/shm:/dev/shm
+    ports:
+      - "3002:3001"    # Playwright API
+      - "8081:8080"    # Selkies WebRTC interface
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  playwright_data:
