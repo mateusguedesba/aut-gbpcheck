@@ -682,7 +682,7 @@ app.post('/automate', async (req, res) => {
       login_url,
       username,
       password,
-      headless = true,
+      headless = process.env.HEADLESS !== 'false',
       enable_vnc = true
     } = req.body;
     

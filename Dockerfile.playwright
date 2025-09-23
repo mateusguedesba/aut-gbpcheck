@@ -1,25 +1,11 @@
 FROM node:18-bullseye
 
-# Instalar dependências do sistema
+# Instalar dependências mínimas do sistema
 RUN apt-get update && apt-get install -y \
-    xvfb \
     wget \
     gnupg \
     ca-certificates \
     procps \
-    libxss1 \
-    libgconf-2-4 \
-    libxrandr2 \
-    libasound2 \
-    libatk1.0-0 \
-    libgtk-3-0 \
-    libdrm2 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxtst6 \
-    libxi6 \
-    libxcursor1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Criar diretório da aplicação
@@ -43,4 +29,4 @@ RUN mkdir -p /app/data
 
 EXPOSE 3001
 
-CMD ["xvfb-run", "-a", "node", "server.js"]
+CMD ["node", "server.js"]
