@@ -1,0 +1,64 @@
+# Dockerfile Unificado - VNC + Playwright
+FROM dorowu/ubuntu-desktop-lxde-vnc:latest
+
+# Instalar Node.js 18 e npm
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs npm && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Verificar versões
+RUN node --version && npm --version
+
+# Criar diretório da aplicação
+WORKDIR /app
+
+# Copiar package.json
+COPY package.json ./
+
+# Instalar dependências Node.js
+RUN npm install
+
+# Instalar Playwright e browsers
+RUN npx playwright install chromium
+RUN npx playwright install-deps
+
+# Copiar código da aplicação
+COPY . .
+
+# Copiar extensão do Chrome
+COPY chrome-extension /chrome-extension
+
+# Criar diretórios necessários
+RUN mkdir -p /app/data/screenshots && \
+    mkdir -p /app/data/browser-data
+
+# Configurar ambiente
+ENV DISPLAY=:1
+ENV NODE_ENV=production
+ENV TZ=America/Sao_Paulo
+ENV HEADLESS=false
+
+# Expor portas
+EXPOSE 3001 80 5900
+
+# Criar script de inicialização
+RUN cat > /startup-unified.sh << 'EOF'
+#!/bin/bash
+
+# Iniciar serviços VNC em background
+/startup.sh &
+
+# Aguardar VNC inicializar
+sleep 10
+
+# Iniciar servidor Playwright
+cd /app
+node server.js
+
+EOF
+
+RUN chmod +x /startup-unified.sh
+
+# Comando de inicialização
+CMD ["/startup-unified.sh"]

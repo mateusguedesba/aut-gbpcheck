@@ -19,26 +19,26 @@ This is a Playwright-based automation service that works with the GBP Check Chro
 - **NOTE: This is an official extension and cannot be edited or modified**
 
 ### Docker Configuration
-- **docker-compose.yml** - Orchestrates the Playwright service and optional VNC server for remote viewing
-- **Dockerfile.playwright** - Node.js 18 container with Playwright and Chromium dependencies
+- **docker-compose.yml** - Single unified container with VNC + Playwright
+- **Dockerfile.unified** - Ubuntu desktop with VNC, Node.js 18, and Playwright
 
 ## Development Commands
 
 ```bash
-# Start the service locally
-npm start
+# Build and start unified service
+docker-compose up --build -d
 
-# Start with auto-reload during development
-npm run dev
+# View logs
+docker-compose logs -f
 
-# Install dependencies
-npm install
+# Stop services
+docker-compose down
 
-# Build and run with Docker
-docker-compose up --build
-
-# Access VNC viewer (if enabled)
+# Access VNC web interface
 # http://localhost:6080 (password: playwright123)
+
+# Access Playwright API
+# http://localhost:80
 ```
 
 ## Architecture
