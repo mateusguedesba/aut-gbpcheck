@@ -16,9 +16,9 @@ services:
       - playwright_data:/app/data
       - /dev/shm:/dev/shm
     ports:
-      - "80:3001"    # Playwright API
-      - "6080:80"    # noVNC web interface
-      - "5901:5900"  # VNC port
+      - "81:3002"    # Playwright API
+      - "6080:81"    # noVNC web interface
+      - "5902:5900"  # VNC port
     cap_add:
       - SYS_ADMIN
     security_opt:
