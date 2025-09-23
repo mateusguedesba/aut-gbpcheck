@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     ca-certificates \
     procps \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Criar diretório da aplicação
