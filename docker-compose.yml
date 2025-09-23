@@ -11,8 +11,8 @@ services:
       - DISPLAY=vnc-server:99
     volumes:
       - playwright_data:/app/data
-    expose:
-      - "3001"  # Expõe porta para proxy interno
+    ports:
+      - "3001:3001"  # Porta principal da API
     cap_add:
       - SYS_ADMIN
     security_opt:
@@ -33,9 +33,9 @@ services:
   vnc-server:
     image: dorowu/ubuntu-desktop-lxde-vnc:latest
     restart: unless-stopped
-    expose:
-      - "80"    # noVNC web interface
-      - "5900"  # VNC port
+    ports:
+      - "6080:80"   # noVNC web interface
+      - "5900:5900" # VNC direct port
     environment:
       - VNC_PASSWORD=playwright123
       - RESOLUTION=1280x720
