@@ -1,8 +1,10 @@
 # Dockerfile Unificado - VNC + Playwright
 FROM dorowu/ubuntu-desktop-lxde-vnc:latest
 
-# Remover Node.js antigo e instalar Node.js 18
+# Corrigir GPG key do Google Chrome e instalar Node.js 18
 RUN apt-get update && \
+    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+    apt-get update && \
     apt-get remove -y nodejs npm && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y nodejs && \
