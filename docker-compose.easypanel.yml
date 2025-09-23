@@ -4,31 +4,37 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile.playwright
+      dockerfile: Dockerfile.unified
     environment:
       - NODE_ENV=production
       - TZ=America/Sao_Paulo
-      - HEADLESS=true
-      - PORT=3001
+      - HEADLESS=false
+      - VNC_PASSWORD=playwright123
+      - RESOLUTION=1280x720
     volumes:
       - app_data:/app/data
     ports:
-      - "3001:3001"
+      - "3001:3001"  # Playwright API
+      - "6080:6080"  # noVNC web interface
+      - "5900:5900"  # VNC direct
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
     cap_add:
       - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
-    shm_size: 1gb
+    shm_size: 2gb
     deploy:
       resources:
         limits:
+          cpus: '4.0'
+          memory: 4g
+        reservations:
           cpus: '2.0'
           memory: 2g
 

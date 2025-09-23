@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  vnc-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.vnc
+    restart: unless-stopped
+    ports:
+      - "6080:6080"  # noVNC web interface
+      - "5900:5900"  # VNC direct port
+    environment:
+      - VNC_PASSWORD=playwright123
+      - RESOLUTION=1280x720
+      - VNC_COL_DEPTH=16
+      - USER=root
+    volumes:
+      - /dev/shm:/dev/shm
+    shm_size: 2gb
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2g
+        reservations:
+          cpus: '1.0'
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
