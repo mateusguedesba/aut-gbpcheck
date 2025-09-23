@@ -1,0 +1,54 @@
+services:
+  playwright-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+      - HEADLESS=true
+      - DISPLAY=vnc-server:99
+    volumes:
+      - playwright_data:/app/data
+    expose:
+      - "3001"
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    shm_size: 2gb
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 4g
+        reservations:
+          cpus: '2.0'
+          memory: 2g
+    depends_on:
+      - vnc-server
+
+  # VNC Server customizado
+  vnc-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.vnc
+    restart: unless-stopped
+    expose:
+      - "5900"  # VNC port
+      - "6080"  # noVNC web interface
+    environment:
+      - VNC_PASSWORD=playwright123
+      - RESOLUTION=1280x720
+    volumes:
+      - /dev/shm:/dev/shm
+    shm_size: 2gb
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2g
+
+volumes:
+  playwright_data:
