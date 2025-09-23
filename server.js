@@ -101,8 +101,8 @@ class PlaywrightAutomation {
 
       // Caminhos comuns do Chrome no Linux/Debian
       const chromePaths = [
-        '/usr/bin/google-chrome',
         '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
         '/usr/bin/chromium-browser',
         '/usr/bin/chromium',
         '/snap/bin/chromium'
