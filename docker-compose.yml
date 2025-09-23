@@ -1,55 +1,44 @@
+name: aut-gbpcheck
+
 services:
   playwright-service:
     build:
       context: .
       dockerfile: Dockerfile.playwright
-    restart: unless-stopped
     environment:
-      - NODE_ENV=production
-      - TZ=America/Sao_Paulo
-      - HEADLESS=true
-      - DISPLAY=vnc-server:99
+      NODE_ENV: ${NODE_ENV:-production}
+      TZ: ${TZ:-America/Sao_Paulo}
+      HEADLESS: ${HEADLESS:-true}
+      DISPLAY: vnc-server:99
     volumes:
       - playwright_data:/app/data
-    ports:
-      - "3001:3001"  # Porta principal da API
     cap_add:
       - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
     shm_size: 2gb
-    deploy:
-      resources:
-        limits:
-          cpus: '3.0'
-          memory: 4g
-        reservations:
-          cpus: '2.0'
-          memory: 2g
     depends_on:
-      - vnc-server
+      vnc-server:
+        condition: service_started
+    healthcheck:
+      test: curl --fail http://localhost:3001/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: always
 
-  # VNC Server para visualização remota (opcional)
   vnc-server:
     image: dorowu/ubuntu-desktop-lxde-vnc:latest
-    restart: unless-stopped
-    ports:
-      - "6080:80"   # noVNC web interface
-      - "5900:5900" # VNC direct port
     environment:
-      - VNC_PASSWORD=playwright123
-      - RESOLUTION=1280x720
-      - VNC_COL_DEPTH=16
-      - NOVNC_ENABLE=true
-      - USER=root
+      VNC_PASSWORD: ${VNC_PASSWORD:-playwright123}
+      RESOLUTION: ${RESOLUTION:-1280x720}
+      VNC_COL_DEPTH: ${VNC_COL_DEPTH:-16}
+      NOVNC_ENABLE: ${NOVNC_ENABLE:-true}
+      USER: ${VNC_USER:-root}
     volumes:
       - /dev/shm:/dev/shm
     shm_size: 2gb
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2g
+    restart: always
 
 volumes:
   playwright_data:
