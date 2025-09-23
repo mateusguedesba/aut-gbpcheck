@@ -3,7 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.playwright
-    container_name: playwright_automation
     restart: unless-stopped
     environment:
       - NODE_ENV=production
@@ -12,13 +11,13 @@ services:
       - DISPLAY=vnc-server:99
     volumes:
       - playwright_data:/app/data
-    ports:
-      - "80:3001"  # Porta 80 para acesso direto
+    expose:
+      - "3001"  # Expõe porta para proxy interno
     cap_add:
       - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
-    shm_size: 2gb  # Aumenta shared memory para performance
+    shm_size: 2gb
     deploy:
       resources:
         limits:
@@ -29,30 +28,27 @@ services:
           memory: 2g
     depends_on:
       - vnc-server
-    links:
-      - vnc-server
 
   # VNC Server para visualização remota (opcional)
   vnc-server:
     image: dorowu/ubuntu-desktop-lxde-vnc:latest
-    container_name: vnc_server
     restart: unless-stopped
-    ports:
-      - "6080:80"  # noVNC web interface
-      - "5901:5900"  # VNC port
+    expose:
+      - "80"    # noVNC web interface
+      - "5900"  # VNC port
     environment:
       - VNC_PASSWORD=playwright123
-      - RESOLUTION=1280x720  # Resolução otimizada
-      - VNC_COL_DEPTH=16     # Reduz profundidade de cor para performance
+      - RESOLUTION=1280x720
+      - VNC_COL_DEPTH=16
       - NOVNC_ENABLE=true
       - USER=root
     volumes:
       - /dev/shm:/dev/shm
-    shm_size: 2gb            # Aumenta shared memory
+    shm_size: 2gb
     deploy:
       resources:
         limits:
-          cpus: '2.0'        # Limita CPU para evitar sobrecarga
+          cpus: '2.0'
           memory: 2g
 
 volumes:
