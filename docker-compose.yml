@@ -10,7 +10,7 @@ services:
       - NODE_ENV=production
       - TZ=America/Sao_Paulo
       - VNC_PASSWORD=playwright123
-      - RESOLUTION=1920x1080
+      - RESOLUTION=800x600
       - HEADLESS=false
     volumes:
       - playwright_data:/app/data
