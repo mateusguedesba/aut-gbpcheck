@@ -17,6 +17,8 @@ services:
     security_opt:
       - seccomp:unconfined
     shm_size: 2gb
+    expose:
+      - "3001"
     depends_on:
       vnc-server:
         condition: service_started
