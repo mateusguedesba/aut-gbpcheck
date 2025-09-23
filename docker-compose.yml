@@ -39,7 +39,8 @@ services:
     volumes:
       - /dev/shm:/dev/shm
     shm_size: 2gb
-    PORT: 6079
+    ports:
+      - "6080:80"   # noVNC web interface
     restart: always
 
 volumes:
