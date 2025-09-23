@@ -56,20 +56,6 @@ services:
       - seccomp:unconfined
       - no-new-privileges:true
 
-    # Resource Limits
-    deploy:
-      resources:
-        limits:
-          cpus: '${CPU_LIMIT:-3.0}'
-          memory: '${MEMORY_LIMIT:-8G}'
-        reservations:
-          cpus: '${CPU_RESERVED:-2.0}'
-          memory: '${MEMORY_RESERVED:-4G}'
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-
     # Logging
     logging:
       driver: "json-file"
