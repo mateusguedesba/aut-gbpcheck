@@ -17,8 +17,6 @@ services:
     security_opt:
       - seccomp:unconfined
     shm_size: 2gb
-    ports:
-      - "3001:80"
     depends_on:
       vnc-server:
         condition: service_started
@@ -41,9 +39,6 @@ services:
     volumes:
       - /dev/shm:/dev/shm
     shm_size: 2gb
-    ports:
-      - "6080:80"   # noVNC web interface
-      - "5900:5900" # VNC direct port
     restart: always
 
 volumes:
