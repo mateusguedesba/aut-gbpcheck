@@ -18,6 +18,15 @@ services:
       - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
+    shm_size: 2gb  # Aumenta shared memory para performance
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4g
+        reservations:
+          cpus: '2.0'
+          memory: 2g
     depends_on:
       - vnc-server
     links:
@@ -33,9 +42,18 @@ services:
       - "5901:5900"  # VNC port
     environment:
       - VNC_PASSWORD=playwright123
-      - RESOLUTION=800x600
+      - RESOLUTION=1280x720  # Resolução otimizada
+      - VNC_COL_DEPTH=16     # Reduz profundidade de cor para performance
+      - NOVNC_ENABLE=true
+      - USER=root
     volumes:
       - /dev/shm:/dev/shm
+    shm_size: 2gb            # Aumenta shared memory
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'        # Limita CPU para evitar sobrecarga
+          memory: 2g
 
 volumes:
   playwright_data:
