@@ -104,6 +104,16 @@ If you see "npm ci can only install with an existing package-lock.json":
 docker-compose build --no-cache
 ```
 
+### Browser fails with "XServer not running"
+This is automatically handled by xvfb-run in the container:
+```bash
+# Check if xvfb is running
+docker-compose exec playwright-service ps aux | grep Xvfb
+
+# View startup logs
+docker-compose logs | grep "xvfb"
+```
+
 ### Service won't start
 ```bash
 docker-compose logs playwright-service
@@ -124,8 +134,10 @@ shm_size: 4gb
 ## 📚 Documentation
 
 - **[DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)** - Complete deployment guide
+- **[EASYPANEL_DEPLOYMENT.md](EASYPANEL_DEPLOYMENT.md)** - Easypanel-specific guide
 - **[DOCKER_QUICK_REFERENCE.md](DOCKER_QUICK_REFERENCE.md)** - Command reference
 - **[DEPLOYMENT_CHANGES_SUMMARY.md](DEPLOYMENT_CHANGES_SUMMARY.md)** - Technical changes
+- **[XVFB_DISPLAY_FIX.md](../XVFB_DISPLAY_FIX.md)** - Virtual display configuration
 
 ## 🔒 Production Deployment
 
