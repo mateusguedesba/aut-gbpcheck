@@ -1,11 +1,8 @@
-version: '3.8'
-
 services:
   playwright-service:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: gbpcheck-automation
     environment:
       # Node environment
       NODE_ENV: ${NODE_ENV:-production}
@@ -22,13 +19,14 @@ services:
     volumes:
       # Persistent data storage
       - playwright_data:/app/data
-      
+
       # Optional: Mount screenshots separately for easier access
       - ./data/screenshots:/app/data/screenshots
-    
-    ports:
-      # Map container port 3001 to host port 3001
-      - "3001:3001"
+
+    # Port 3001 is exposed in Dockerfile
+    # Platform will handle port mapping automatically
+    expose:
+      - "3001"
     
     # Required capabilities for browser automation
     cap_add:

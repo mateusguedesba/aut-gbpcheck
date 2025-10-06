@@ -86,11 +86,20 @@ HEADLESS=true
 
 ### Port Configuration
 
-The service runs on port 3001 by default. To change:
+The service exposes port 3001 internally. When using platforms like Easypanel, the platform handles port mapping automatically.
+
+For manual Docker deployments, you can add port mapping:
 
 ```yaml
 ports:
   - "8080:3001"  # Map to port 8080 on host
+```
+
+Or use the `expose` directive (current configuration):
+
+```yaml
+expose:
+  - "3001"  # Platform handles external mapping
 ```
 
 ## Data Persistence
