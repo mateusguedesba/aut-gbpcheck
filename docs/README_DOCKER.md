@@ -96,6 +96,14 @@ docker run --rm -v playwright_data:/data -v $(pwd):/backup \
 
 ## 🐛 Troubleshooting
 
+### Build fails with npm error
+If you see "npm ci can only install with an existing package-lock.json":
+```bash
+# The Dockerfile uses npm install which works with or without package-lock.json
+# If issue persists, ensure package-lock.json is not in .dockerignore
+docker-compose build --no-cache
+```
+
 ### Service won't start
 ```bash
 docker-compose logs playwright-service

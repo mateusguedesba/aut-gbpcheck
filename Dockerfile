@@ -45,7 +45,8 @@ RUN apt-get update && apt-get install -y \
 COPY package*.json ./
 
 # Install Node.js dependencies
-RUN npm ci --only=production
+# Use npm install if package-lock.json exists, otherwise it will create one
+RUN npm install --production
 
 # Install Playwright and Chromium browser
 RUN npx playwright install chromium

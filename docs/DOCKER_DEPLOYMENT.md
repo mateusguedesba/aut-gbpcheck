@@ -33,6 +33,9 @@ The service now uses the following browser priority:
 # Build the Docker image
 docker-compose build
 
+# Or build without cache (recommended for first build)
+docker-compose build --no-cache
+
 # Start the service
 docker-compose up -d
 
